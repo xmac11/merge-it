@@ -34,14 +34,9 @@ if [ "$pipeline_state" = "failure" ]; then
   exit 0
 fi
 
-# Fetch PR number
-# GitHub's PR search endpoint (https://docs.github.com/en/rest/pulls/pulls?apiVersion=2022-11-28#list-pull-requests) could not be relied upon, since it returned non-unique results, even when searching for a specific branch
-# So until a better solution is found, we resort to this workaround
-pr_number=$(echo $(gh pr list --state all --search head:"$pr_branch") | cut -f1 -d " ")
-
-# Fetch PR state (open/closed)
-# https://docs.github.com/en/rest/pulls/pulls?apiVersion=2022-11-28#get-a-pull-request
-pr_state=$(gh api -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" /repos/"$owner"/"$repo"/pulls/"$pr_number" --jq '.state')
+# Find PR state for the given branch. Only open PRs are searched.
+# https://docs.github.com/en/rest/pulls/pulls?apiVersion=2022-11-28#list-pull-requests
+pr_state=$(gh api -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" /repos/"$owner"/"$repo"/pulls --jq '.[] | select(.head.ref=="'$pr_branch'") | .state')
 
 # Remove slashes from branch name in order to be able to use it in the worktree directory name
 pr_branch_suffix=$(echo "$pr_branch" | awk -F/ '{print $NF}')
@@ -65,8 +60,8 @@ fi
 # Navigate inside the worktree
 cd "$path_to_worktree" || exit
 
-# If the PR state is closed (i.e. PR has been merged or closed) but the worktree still exists, remove it
-if [ "$pr_state" = "closed" ]; then
+# If the PR state is not open (i.e. PR has been merged or closed) but the worktree still exists, remove it
+if [ "$pr_state" != "open" ]; then
   if [ -d "$path_to_worktree" ]; then
     echo "[$log_prefix] Removing worktree: $worktree for branch: $pr_branch"; echo;
     git worktree remove -f "$worktree"
